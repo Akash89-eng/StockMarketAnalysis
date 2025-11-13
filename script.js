@@ -1,6 +1,6 @@
 class StockAnalysisApp {
     constructor() {
-        // ✅ YOUR RENDER BACKEND URL
+        // Your Render backend URL
         this.apiBaseUrl = 'https://stockmarketanalysis-33c0.onrender.com/api';
         this.stocks = ['RELIANCE.NS', 'TCS.NS', 'INFY.NS', 'HDFCBANK.NS', 'ITC.NS'];
         this.initializeEventListeners();
@@ -28,13 +28,6 @@ class StockAnalysisApp {
         document.getElementById('analyzeBtn').addEventListener('click', () => {
             this.analyzeStocks();
         });
-
-        // Add enter key support
-        document.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') {
-                this.analyzeStocks();
-            }
-        });
     }
 
     async checkAPIStatus() {
@@ -42,7 +35,15 @@ class StockAnalysisApp {
         try {
             statusElement.innerHTML = '<i class="fas fa-sync fa-spin"></i> API: Checking...';
             
-            const response = await fetch(`${this.apiBaseUrl}/health`);
+            // Add timeout to avoid hanging requests
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 5000);
+            
+            const response = await fetch(`${this.apiBaseUrl}/health`, {
+                signal: controller.signal
+            });
+            
+            clearTimeout(timeoutId);
             
             if (response.ok) {
                 const data = await response.json();
@@ -56,7 +57,15 @@ class StockAnalysisApp {
             console.error('❌ API check failed:', error);
             statusElement.className = 'status-offline';
             statusElement.innerHTML = '<i class="fas fa-circle"></i> API: Offline';
-            this.showError('Cannot connect to backend server. Please try again later.');
+            
+            let errorMessage = 'Cannot connect to backend. ';
+            if (error.name === 'AbortError') {
+                errorMessage += 'Request timed out. Backend might be starting up.';
+            } else {
+                errorMessage += 'Please check if backend is deployed correctly.';
+            }
+            
+            console.error('Backend connection error:', errorMessage);
         }
     }
 
@@ -64,7 +73,6 @@ class StockAnalysisApp {
         const startDate = document.getElementById('startDate').value;
         const endDate = document.getElementById('endDate').value;
 
-        // Validation
         if (!startDate || !endDate) {
             this.showError('Please select both start and end dates');
             return;
@@ -75,12 +83,14 @@ class StockAnalysisApp {
             return;
         }
 
-        // Show loading state
         this.showLoading(true);
-        this.disableForm(true);
 
         try {
-            console.log('📊 Sending analysis request to:', `${this.apiBaseUrl}/analyze`);
+            console.log('🔄 Starting analysis...');
+            
+            // Add timeout for the analysis request
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
             
             const response = await fetch(`${this.apiBaseUrl}/analyze`, {
                 method: 'POST',
@@ -90,32 +100,45 @@ class StockAnalysisApp {
                 body: JSON.stringify({
                     start_date: startDate,
                     end_date: endDate
-                })
+                }),
+                signal: controller.signal
             });
 
+            clearTimeout(timeoutId);
+
             if (!response.ok) {
-                throw new Error(`Server returned ${response.status}`);
+                const errorText = await response.text();
+                throw new Error(`Server error: ${response.status} - ${errorText}`);
             }
 
             const data = await response.json();
-            console.log('✅ Analysis response:', data);
+            console.log('📊 Analysis response received');
 
             if (data.success) {
                 this.displayResults(data.data);
             } else {
-                throw new Error(data.error || 'Analysis failed');
+                throw new Error(data.error || 'Analysis failed on server');
             }
         } catch (error) {
-            console.error('❌ Analysis error:', error);
-            this.showError(`Analysis failed: ${error.message}`);
+            console.error('❌ Analysis failed:', error);
+            
+            let userMessage = 'Analysis failed: ';
+            if (error.name === 'AbortError') {
+                userMessage += 'Request timed out. The backend might be starting up or busy. Please try again in 30 seconds.';
+            } else if (error.message.includes('Failed to fetch')) {
+                userMessage += 'Cannot connect to backend server. Please check:\n\n• Backend is deployed on Render\n• Backend URL is correct\n• No network connectivity issues';
+            } else {
+                userMessage += error.message;
+            }
+            
+            this.showError(userMessage);
         } finally {
             this.showLoading(false);
-            this.disableForm(false);
         }
     }
 
     displayResults(data) {
-        // Update key metrics
+        // Update metrics
         document.getElementById('mainTrendStock').textContent = data.analysis.main_trend_stock.split('.')[0];
         document.getElementById('varianceExplained').textContent = 
             data.analysis.variance_explained.toFixed(2) + '%';
@@ -132,9 +155,9 @@ class StockAnalysisApp {
         this.displayEigenData(data.eigenvalues, data.eigenvectors);
 
         // Show results section
-        this.showResultsSection();
+        document.getElementById('resultsSection').classList.remove('hidden');
         
-        console.log('📈 Results displayed successfully');
+        console.log('✅ Results displayed successfully');
     }
 
     displayStockPrices(pricesData) {
@@ -146,13 +169,11 @@ class StockAnalysisApp {
         dates.forEach(date => {
             const row = document.createElement('tr');
             
-            // Date cell
             const dateCell = document.createElement('td');
             dateCell.textContent = new Date(date).toLocaleDateString();
             dateCell.style.fontWeight = '600';
             row.appendChild(dateCell);
 
-            // Stock price cells
             this.stocks.forEach(stock => {
                 const priceCell = document.createElement('td');
                 const price = pricesData[date][stock];
@@ -172,7 +193,6 @@ class StockAnalysisApp {
         eigenvalues.forEach((eigenvalue, index) => {
             const row = document.createElement('tr');
             
-            // Component cell
             const compCell = document.createElement('td');
             compCell.textContent = `PC${index + 1}`;
             compCell.style.fontWeight = 'bold';
@@ -180,14 +200,12 @@ class StockAnalysisApp {
             compCell.style.color = index === 0 ? 'white' : '#2c3e50';
             row.appendChild(compCell);
 
-            // Eigenvalue cell
             const evalCell = document.createElement('td');
             evalCell.textContent = eigenvalue.toFixed(6);
             evalCell.style.fontFamily = 'monospace';
             evalCell.style.fontWeight = '600';
             row.appendChild(evalCell);
 
-            // Eigenvector cells
             eigenvectors[index].forEach((value) => {
                 const vecCell = document.createElement('td');
                 vecCell.textContent = value.toFixed(4);
@@ -206,42 +224,14 @@ class StockAnalysisApp {
         });
     }
 
-    showResultsSection() {
-        const resultsSection = document.getElementById('resultsSection');
-        resultsSection.classList.remove('hidden');
-        
-        // Scroll to results
-        setTimeout(() => {
-            resultsSection.scrollIntoView({ 
-                behavior: 'smooth', 
-                block: 'start' 
-            });
-        }, 300);
-    }
-
     showLoading(show) {
         const spinner = document.getElementById('loadingSpinner');
-        const analyzeBtn = document.getElementById('analyzeBtn');
-        
         if (show) {
             spinner.classList.remove('hidden');
-            analyzeBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Analyzing...';
-            analyzeBtn.disabled = true;
+            document.getElementById('resultsSection').classList.add('hidden');
         } else {
             spinner.classList.add('hidden');
-            analyzeBtn.innerHTML = '<i class="fas fa-rocket"></i> Analyze Stocks';
-            analyzeBtn.disabled = false;
         }
-    }
-
-    disableForm(disable) {
-        const inputs = document.querySelectorAll('input');
-        const button = document.getElementById('analyzeBtn');
-        
-        inputs.forEach(input => {
-            input.disabled = disable;
-        });
-        button.disabled = disable;
     }
 
     showError(message) {
@@ -250,7 +240,6 @@ class StockAnalysisApp {
     }
 }
 
-// Modal functions
 function closeModal() {
     document.getElementById('errorModal').classList.add('hidden');
 }
@@ -264,6 +253,4 @@ document.getElementById('errorModal').addEventListener('click', function(e) {
 // Initialize the application when the page loads
 document.addEventListener('DOMContentLoaded', () => {
     new StockAnalysisApp();
-    console.log('🚀 Stock Analysis App initialized');
-    console.log('📊 Backend URL: https://stockmarketanalysis-33c0.onrender.com');
 });
