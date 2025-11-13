@@ -1,7 +1,7 @@
 class StockAnalysisApp {
     constructor() {
         // Your Render backend URL
-        this.apiBaseUrl = 'https://stockmarketanalysis-33c0.onrender.com/api';
+        this.apiBaseUrl = 'https://stockmarketanalysis-1-biws.onrender.com/api';
         this.stocks = ['RELIANCE.NS', 'TCS.NS', 'INFY.NS', 'HDFCBANK.NS', 'ITC.NS'];
         this.initializeEventListeners();
         this.checkAPIStatus();
